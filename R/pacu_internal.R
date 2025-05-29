@@ -121,68 +121,76 @@
 #' @param overwrite whether to overwrite the original file
 #' @noRd
 
-.pa_crop_s2_to_aoi <- function(satellite_images,
+.pa_crop_s2_to_aoi <- function(satellite.images,
                                aoi,
                                overwrite = TRUE){
 
-  for (sat_img in satellite_images) {
+  for (sat.img in satellite.images) {
 
-    image_indices <- .pa_select_s2_files(sat_img, which = 'images')
-    temporary_dir <- tempdir(check = TRUE)
-    bname <- basename(sat_img)
+    image.indices <- .pa_select_s2_files(sat.img, which = 'images')
+    temporary.dir <- tempdir(check = TRUE)
+    bname <- basename(sat.img)
     bname <- strsplit(bname, '\\.')[[1]][1]
-    temporary_dir <- file.path(temporary_dir, bname)
-    reduced_dir <- file.path(temporary_dir, 'reduced/IMG_DATA')
+    temporary.dir <- file.path(temporary.dir, bname)
+    reduced.dir <- file.path(temporary.dir, 'reduced/IMG_DATA')
     
-    dir.create(temporary_dir, showWarnings = FALSE, recursive = TRUE)
-    utils::unzip(sat_img[[1]], overwrite = TRUE, exdir = temporary_dir, junkpaths = TRUE)
-    cmi <- grep('B00', image_indices)
-    cloud_mask <- image_indices[cmi]
-    image_indices <- image_indices[-cmi]
-    dir.create(reduced_dir, recursive = TRUE, showWarnings = FALSE)
-    for (band in image_indices) {
-      band_img <- stars::read_stars(file.path(temporary_dir, band))
-      boundary <- sf::st_geometry(sf::st_transform(aoi, sf::st_crs(band_img)))
-      band_img <- sf::st_crop(band_img, boundary, mask = TRUE)
+    dir.create(temporary.dir, showWarnings = FALSE, recursive = TRUE)
+    imgList <- utils::unzip(sat.img[[1]], 
+                            list = TRUE)
+    files.tgt <- .pa_select_s2_files(sat.img[[1]])
+    files.out <- sapply(files.tgt, function(x) grep(x, imgList[[1]], value = TRUE))
+    utils::unzip(sat.img[[1]], 
+                 files = files.out,
+                 overwrite = TRUE, 
+                 exdir = temporary.dir, 
+                 junkpaths = TRUE)
+    cmi <- grep('B00', image.indices)
+    cloud.mask <- image.indices[cmi]
+    image.indices <- image.indices[-cmi]
+    dir.create(reduced.dir, recursive = TRUE, showWarnings = FALSE)
+    for (band in image.indices) {
+      band.img <- stars::read_stars(file.path(temporary.dir, band))
+      boundary <- sf::st_geometry(sf::st_transform(aoi, sf::st_crs(band.img)))
+      band.img <- sf::st_crop(band.img, boundary, mask = TRUE)
       band <- gsub('\\.jp2', '\\.tif', band)
 
-      img.out <- file.path(reduced_dir, band)
-      stars::write_stars(band_img,
+      img.out <- file.path(reduced.dir, band)
+      stars::write_stars(band.img,
                          img.out)
     }
 
-    if (length(cloud_mask) > 0){
-      file.copy(file.path(temporary_dir, cloud_mask),
-                file.path(reduced_dir, cloud_mask))
+    if (length(cloud.mask) > 0){
+      file.copy(file.path(temporary.dir, cloud.mask),
+                file.path(reduced.dir, cloud.mask))
     }
 
-    metadata <- .pa_select_s2_files(fpath = sat_img, which = 'metadata')
+    metadata <- .pa_select_s2_files(fpath = sat.img, which = 'metadata')
     if (length(metadata) > 0){
-      file.copy(file.path(temporary_dir, metadata),
-                file.path(reduced_dir, metadata))
+      file.copy(file.path(temporary.dir, metadata),
+                file.path(reduced.dir, metadata))
     }
     
-    files_to_zip <- list.files(reduced_dir, recursive = TRUE)
+    files.to.zip <- list.files(reduced.dir, recursive = TRUE)
     if(overwrite){
-      wrt.path <- sat_img[[1]]
+      wrt.path <- sat.img[[1]]
       unlink(wrt.path)
     }else{
-      bname <- basename(sat_img[[1]])
+      bname <- basename(sat.img[[1]])
       f <- strsplit(bname, '\\.')[[1]][1]
       extension <- strsplit(bname, '\\.')[[1]][2]
-      wrt.path <- file.path(dirname(sat_img[[1]]), 
+      wrt.path <- file.path(dirname(sat.img[[1]]), 
                               paste0(f, '-reduced'))
     }
     utils::zip(wrt.path,
-               files = file.path(reduced_dir,
-                                 files_to_zip),
+               files = file.path(reduced.dir,
+                                 files.to.zip),
                flags = '-q') ## might need to adjust this to different OS
     
     ## Deleting temporary folders
-    folders_to_delete <- dir(temporary_dir, pattern = '[.]SAFE')
-    unlink(paste0(normalizePath(temporary_dir), "/", folders_to_delete),
+    folders.to.delete <- dir(temporary.dir, pattern = '[.]SAFE')
+    unlink(paste0(normalizePath(temporary.dir), "/", folders.to.delete),
            recursive = TRUE)
-    unlink(reduced_dir,
+    unlink(reduced.dir,
            recursive = TRUE)
     
   }
@@ -330,26 +338,19 @@
   which <- match.arg(which)
   imgList <- utils::unzip(fpath, list = TRUE)
   bname <- basename(fpath)
-
+  
+  if (!grepl('^S2A|^S2B', x = bname))
+    stop('Only S2A and S2B functions are supported for now.')
+  
+  metadata <- .pa_read_s2_metadata(fpath, to.raw.file = TRUE)
+  graticule <- basename(unlist(metadata$General_Info$Product_Info$Product_Organisation))
+  img.indices <- sapply(graticule, function(x) grep(x, imgList[[1]], value = TRUE))
+  
   cld.str <- 'B00\\.jp2|B00\\.gml'
   cloud_mask <- grep(cld.str, imgList[[1]], ignore.case = TRUE, value = TRUE)
 
   mtd <- grep('MTD_MSI', imgList[[1]], value = TRUE)
-
-  if (length(mtd) < 1) {
-    if(!s.wrns)
-      warning('No metadata found for ', basename(fpath), immediate. = TRUE)
-  } else {mtd <- mtd[[1]]}
-
-  if (grepl('^S2A|^S2B', x = bname)){
-    rel.str <- paste0('IMG_DATA/.{1,}B[0-9]{2,2}.{0,}\\.(jp2|tif)')
-    img.indices <- grep(rel.str, imgList[[1]], value = TRUE)
-  #} else if(grepl('^S2B', x = bname)){
-    #rel.str <- paste0('IMG_DATA/.{1,}B[0-9]{2,2}\\.(jp2|tif)')
-    #img.indices <- grep(rel.str, imgList[[1]], value = TRUE)
-  }else{
-    stop('Only S2A and S2B functions are supported for now.')
-  }
+  
 
   if(which == 'all')
     rel.files <- basename(unlist(c(img.indices, cloud_mask, mtd)))
@@ -401,14 +402,412 @@
 #' @description  Reads the metadata from a S2 file
 #' @name .pa_read_s2_metadata
 #' @rdname .pa_read_s2_metadata
-#' @param fpath a file path pointing to an S2 file
+#' @param fpath a file path pointing to an S2 metadata file
+#' @param to.raw.file whether the file path points to
+#' a raw file. In which case the metadata needs to be extracted.
 #' @return a list containing the file metadata
 #' @noRd
-.pa_read_s2_metadata <- function(fpath) {
-  mtd <- XML::xmlTreeParse(file = fpath)
+.pa_read_s2_metadata <- function(fpath, to.raw.file = FALSE) {
+  if (to.raw.file){
+    flist <- utils::unzip(fpath, list = TRUE )
+    mtd <- grep('MTD_MSI', flist[[1]], value = TRUE)
+    if(length(mtd) < 1)
+      stop('No metadata found in the file. Cannot navigate file organization.')
+    
+    mtd2 <- grep(pattern = mtd, 
+                 flist$Name, 
+                 value = TRUE)
+    utils::unzip(fpath,
+          files = mtd2, 
+          junkpaths = TRUE, 
+          exdir = tempdir())
+    
+    to.xml <- file.path(tempdir(),basename(mtd))
+    
+  }else{
+    to.xml <- fpath
+  }
+  
+  mtd <- XML::xmlTreeParse(file = to.xml)
   mtd <- XML::xmlToList(mtd)
   return(mtd)
 }
+
+#'
+#' @title Aligns the bounding box of stars objects in a list
+#' @description  Aligns the bounding box of stars objects in a list
+#' @name .pa_align_bbox
+#' @param object a list contaning stars objects
+#' @return a list containing stars objects
+#' @noRd
+.pa_align_bbox <- function(object){
+  crt.crs <- sf::st_crs(object[[1]])
+  object <- lapply(object, function(x) stars::st_warp(x, crs = crt.crs))
+  exts <- lapply(object, function(x) sf::st_as_sf(sf::st_as_sfc(sf::st_bbox(x))))
+  ext <- Reduce(function(x, y) {sf::st_union(x, y)},
+                x = exts)
+  dx <- dy <- unname(st_res(object[[1]])[1])
+  new.bb <- stars::st_as_stars(sf::st_bbox(ext), dx = dx, dy = dy)
+  for ( i in 1:length(object)){
+    aligned <- stars::st_warp(object[[i]], new.bb)
+    aligned <- stars::st_set_dimensions(aligned, which = 'time',
+                                        value = stars::st_get_dimension_values(object[[i]], 'time'))
+    object[[i]] <- aligned
+  }
+  return(object)
+}
+
+#'
+#' @title Consolidates duplicated dates into one single image
+#' @description  Consolidates duplicated dates into one single image
+#' @name .pa_consolidate_dates
+#' @rdname .pa_consolidate_date
+#' @param object a list contaning stars objects
+#' @param fun function to be applied to duplicated dates
+#' @return a list containing stars objects
+#' @noRd
+.pa_consolidate_dates <-  function(object, 
+                                   fun = function(x) mean(x, na.rm = TRUE)){
+  
+  s.wrns <-  get("suppress.warnings", envir = pacu.options)
+  s.msgs <-  get("suppress.messages", envir = pacu.options)
+  date.grp <- sapply(object, function(x) stars::st_get_dimension_values(x, 'time'))
+  
+  res <-list()
+  for (gp in unique(date.grp)){
+    gp.i <- which(date.grp == gp)
+    if (length(gp.i) > 1){
+      gp.date <- as.Date(stars::st_get_dimension_values(object[[gp.i[1]]], 'time'))
+      
+      if (!s.wrns)
+        warning('Date ', gp.date, ' has duplicate data. Consolidating into one layer.')
+        
+      var.name <- names(object[[gp.i[1]]])
+      cons <- stars::st_apply(do.call(c, c(object[gp.i], along = 'time')),
+                              c("x", "y"),
+                              FUN = fun) 
+      names(cons) <- var.name
+      cons <- stars::st_redimension(cons,
+                                    new_dims = c(dim(cons), 1))
+      cons <- stars::st_set_dimensions(cons, names = c('x', 'y', 'time'))
+      cons <- stars::st_set_dimensions(cons, 3, gp.date)
+      res[[length(res) + 1]] <- cons
+      
+    }else{
+      res[[length(res) + 1]] <- object[[gp.i]]
+    }
+  }
+  return(res)
+}
+
+
+
+#'
+#' @title Checks the integrity of the Dataspace
+#' @description  Checks the integrity of the zip files downloaded
+#' from Dataspace
+#' @name .pa_check_zip_integrity
+#' @rdname .pa_check_zip_integrity
+#' @param x a list of zip files to check
+#' @return No return value, called for side effects
+#' @noRd
+.pa_check_zip_integrity <- function(x){
+  s.wrns <-  get("suppress.warnings", envir = pacu.options)
+  x <- x[file.exists(x)]
+  x <- x[grepl('\\.zip', x)]
+  for (i in 1:length(x)){
+    val <- try(suppressWarnings(utils::unzip(x[i], list  = TRUE)), silent = TRUE)
+    if (inherits(val, 'try-error') || is.null(val)){
+      if (!s.wrns)
+        warning('File ', x[i], ' is corrupted and will be removed.')
+      file.remove(x[i])
+    }
+  }
+}
+
+
+
+
+#'
+#' @title Predicts cardinal dates
+#' @description Predicts cardinal dates
+#' @name .pa_predict_cardinal_dates
+#' @rdname .pa_predict_cardinal_dates
+#' @param df a data frame with columns: doy, rvalue
+#' @param model string representing which model to use
+#' to predict cardinal dates
+#' @param prior.means a vector of length three with prior mean values
+#' @param prior.vars a vector of length three with prior variance values
+#' @return vector of length three with cardinal date predictions
+#' @noRd
+.pa_predict_cardinal_dates <- function(df,
+                                       model = c("card3", "scard3", "agauss", "harmonic"),
+                                       prior.means,
+                                       prior.vars,
+                                       verbose = FALSE) {
+  ### The assumption is that 'data' should have:
+  ### 1) doy
+  ### 2) rvalue
+  model <- match.arg(model)
+  algorithm <- "prior"
+
+  ## Rescaling the predictor variable
+  ## this helps with convergence of the nls algorithm
+  df$doy <- df$doy / 365
+
+  ### First step is to fit a nonlinear model
+  ### First we try using 'nls', if it fails, we try using 'minpack.lm::nlsLM'
+  ### If we still fail, we return the prior
+  if (model == "card3") {
+    fnls <- try(stats::nls(rvalue ~ nlraa::SScard3(doy, tb, to, tm),
+      data = df
+    ), silent = TRUE)
+
+    algorithm <- "nls"
+
+    if (inherits(fnls, "try-error")) {
+      fnls <- try(minpack.lm::nlsLM(rvalue ~ nlraa::SScard3(doy, tb, to, tm),
+        data = df
+      ), silent = TRUE)
+
+      algorithm <- "LM"
+
+      if (inherits(fnls, "try-error")) {
+        if (verbose) warning("Model fitting failed Returning the prior")
+        attr(prior.means, "algorithm") <- algorithm
+        return(prior.means)
+      }
+    }
+    R2 <- nlraa::R2M(fnls)
+    cfs <- stats::coef(fnls)
+    nls.vars <- summary(fnls)$coefficients[, 2]^2
+  }
+
+  if (model == "scard3") {
+    fnls <- try(stats::nls(rvalue ~ nlraa::SSscard3(doy, tb, to, tm),
+      data = df
+    ), silent = TRUE)
+
+    algorithm <- "nls"
+
+    if (inherits(fnls, "try-error")) {
+      fnls <- try(minpack.lm::nlsLM(rvalue ~ nlraa::SSscard3(doy, tb, to, tm),
+        data = df
+      ), silent = TRUE)
+
+      algorithm <- "LM"
+
+      if (inherits(fnls, "try-error")) {
+        if (verbose) warning("Model fitting failed. Returning the prior")
+        attr(prior.means, "algorithm") <- algorithm
+        return(prior.means)
+      }
+    }
+    R2 <- nlraa::R2M(fnls)
+    cfs <- stats::coef(fnls)
+    nls.vars <- summary(fnls)$coefficients[, 2]^2
+    # fnls.bt <- nlraa::boot_nls(fnls, data = data, verbose = FALSE)
+    # nls.vars <- apply(fnls.bt$t, 2, stats::var, na.rm = TRUE)
+  }
+
+  if (model == "agauss") {
+    delta.start <- prior.means[2] / 365
+    sigma1.start <- (prior.means[2] - prior.means[1]) / (2 * 365)
+    sigma2.start <- (prior.means[3] - prior.means[2]) / (2 * 365)
+
+    fnls <- try(stats::nls(rvalue ~ nlraa::SSagauss(doy, eta = 1, beta = 0, delta, sigma1, sigma2),
+      start = list(delta = delta.start, sigma1 = sigma1.start, sigma2 = sigma2.start),
+      data = df
+    ), silent = TRUE)
+
+    algorithm <- "nls"
+
+    if (inherits(fnls, "try-error")) {
+      fnls <- try(minpack.lm::nlsLM(rvalue ~ nlraa::SSagauss(doy, eta = 1, beta = 0, delta, sigma1, sigma2),
+        start = list(delta = delta.start, sigma1 = sigma1.start, sigma2 = sigma2.start),
+        data = df
+      ), silent = TRUE)
+
+      algorithm <- "LM"
+
+      if (inherits(fnls, "try-error")) {
+        if (verbose) warning("Model fitting failed. Returning the prior")
+        attr(prior.means, "algorithm") <- algorithm
+        return(prior.means)
+      }
+    }
+    R2 <- nlraa::R2M(fnls)
+    delta.tb <- car::deltaMethod(fnls, "-2 * sigma1 + delta")
+    delta.tm <- car::deltaMethod(fnls, "2 * sigma2 + delta")
+    delta.to <- car::deltaMethod(fnls, "delta")
+    cfs <- c(delta.tb[[1]], delta.to[[1]], delta.tm[[1]])
+    ### Need to compute the nls.vars
+    nls.vars <- c(delta.tb[[2]], delta.to[[2]], delta.tm[[2]])^2
+  }
+
+  if (model == "harmonic") {
+    algorithm <- "lm"
+
+    fnls <- try(stats::lm(rvalue ~ I(doy) + I(sin(2 * pi * doy)) + I(cos(2 * pi * doy)) +
+      I(sin(4 * pi * doy)) + I(cos(4 * pi * doy)), data = df))
+
+    harm.dates <- try(.pa_predict_harmonic_dates(stats::coef(fnls), stats::vcov(fnls), scaling.factor = 1))
+    if (inherits(fnls, "try-error") || any(is.na(harm.dates))) {
+      if (verbose) warning("Model fitting failed. Returning the prior")
+      attr(prior.means, "algorithm") <- algorithm
+      return(prior.means)
+    }
+    cfs <- c(harm.dates)
+    nls.vars <- c(attr(harm.dates, "se"))^2
+    R2 <- nlraa::R2M(fnls)
+  }
+
+
+  ### Compute the posterior estimate
+  ans <- numeric(3)
+  sds <- numeric(3)
+
+
+  ## Bringing the model estimates back to "day of the year"
+  cfs <- cfs * 365
+  nls.vars <- nls.vars * (365**2)
+
+  for (i in 1:3) {
+    ans[i] <- (1 / prior.vars[i] * prior.means[i] + 1 / nls.vars[i] * cfs[i]) / (1 / prior.vars[i] + 1 / nls.vars[i])
+    tau1 <- 1 / (1 / prior.vars[i] + 1 / nls.vars[i])
+    sds[i] <- sqrt(tau1)
+  }
+
+
+  attr(ans, "algorithm") <- algorithm
+  attr(ans, "R2") <- R2$R2
+  attr(ans, "stds") <- sds
+  return(round(ans, 8))
+}
+
+
+#'
+#' @title Extract cardinal dates from harmonic regression coefficients
+#' @description Extract cardinal dates from harmonic regression coefficients
+#' @name .pa_get_dates_harmonic_regression
+#' @rdname .pa_get_dates_harmonic_regression
+#' @param betas a vector of length 6 with the parameter values of 
+#' a harmonic regression fit
+#' @param scaling.factor the scaling factor used in the harmonic regression. 365 if 
+#' the x variable was day of the year. 1 if the x variable was fraction of the year (0-1).
+#' @return vector of length three with cardinal date predictions from a harmonic fit
+#' @noRd
+.pa_get_dates_harmonic_regression <- function(betas, scaling.factor = 365) {
+  if (length(betas) != 6) {
+    stop("betas should be of length 6")
+  }
+  harmonic_gradient <- stats::deriv(
+    y ~ b0 + b1 * x / scaling.factor + b2 * sin(2 * pi * x / scaling.factor) +
+      b3 * cos(2 * pi * x / scaling.factor) +
+      b4 * sin(4 * pi * x / scaling.factor) + b5 * cos(4 * pi * x / scaling.factor),
+    c("x"),
+    function.arg = c(
+      "x", "scaling.factor", "b0", "b1", "b2", "b3",
+      "b4", "b5"
+    ),
+    hessian = TRUE
+  )
+
+  preds <- function(x, scaling.factor, b0, b1, b2, b3, b4, b5) {
+    b0 + b1 * x / scaling.factor + b2 * sin(2 * pi * x / scaling.factor) +
+      b3 * cos(2 * pi * x / scaling.factor) +
+      b4 * sin(4 * pi * x / scaling.factor) + b5 * cos(4 * pi * x / scaling.factor)
+  }
+
+  get_gradient <- function(deriv_obj, ...) {
+    gr <- deriv_obj(...)
+    gr <- attr(gr, "gradient")
+    gr
+  }
+  xseq <- scaling.factor * seq(0, 1, length.out = 366)
+  gradient <- harmonic_gradient(xseq,
+    scaling.factor = scaling.factor,
+    b0 = betas[1], b1 = betas[2], b2 = betas[3],
+    b3 = betas[4], b4 = betas[5], b5 = betas[6]
+  )
+  gradient <- attr(gradient, "gradient")
+  gradient.sign <- sign(gradient)
+  turning.points <- xseq[which(diff(gradient.sign) != 0)]
+
+  roots <- c()
+  for (i in turning.points) {
+    root <- try(
+      stats::uniroot(
+        f = get_gradient, interval = c(i, i + (scaling.factor / 365)),
+        deriv_obj = harmonic_gradient,
+        scaling.factor = scaling.factor,
+        b0 = betas[1], b1 = betas[2], b2 = betas[3],
+        b3 = betas[4], b4 = betas[5], b5 = betas[6]
+      ),
+      silent = TRUE
+    )
+
+    if (!inherits(root, "try-error")) {
+      roots <- c(roots, root$root)
+    }
+  }
+  to.index <- which.max(
+    preds(
+      x = roots,
+      scaling.factor = scaling.factor,
+      b0 = betas[1], b1 = betas[2], b2 = betas[3],
+      b3 = betas[4], b4 = betas[5], b5 = betas[6]
+    )
+  )
+  to <- roots[to.index]
+  tb <- roots[to.index - 1]
+  tm <- roots[to.index + 1]
+
+  if (length(to) < 1 || length(tb) < 1 || length(tm) < 1) {
+    warning("Could not find all three roots for this function")
+    return(c(tb = NA, to = NA, tm = NA))
+  }
+  card.dates <- c(tb, to, tm)
+  return(card.dates)
+}
+
+
+#'
+#' @title Extract cardinal dates from harmonic regression coefficients
+#' @description Extract cardinal dates from harmonic regression coefficients
+#' @name .pa_predict_harmonic_dates
+#' @rdname .pa_predict_harmonic_dates
+#' @param betas a vector of length 6 with the parameter values of 
+#' a harmonic regression fit
+#' @param sigma variance-covariance matrix of the harmonic regression fit
+#' @param nsim number of simulations performed to estimate the standard deviation
+#' @param scaling.factor the scaling factor used in the harmonic regression. 365 if 
+#' the x variable was day of the year. 1 if the x variable was fraction of the year (0-1).
+#' @return vector of length three with cardinal date predictions from a harmonic fit
+#' @noRd
+#' 
+.pa_predict_harmonic_dates <- function(
+    betas,
+    sigma,
+    nsim = 1e3,
+    scaling.factor = 365) {
+  coef.samples <- MASS::mvrnorm(n = nsim, mu = betas, Sigma = sigma)
+
+  if (!inherits(coef.samples, "matrix")) {
+    coef.samples <- matrix(coef.samples, ncol = 6)
+  }
+  cdates.samples <- suppressWarnings(apply(coef.samples, 1, function(x) {
+    .pa_get_dates_harmonic_regression(x, scaling.factor)
+  }))
+  cdates.mc <- apply(cdates.samples, 1, function(x) {
+    c(mean = mean(x, na.rm = TRUE), sd = stats::sd(x, na.rm = TRUE))
+  })
+  cdates <- cdates.mc[1, ]
+  attr(cdates, "se") <- cdates.mc[2, ]
+  cdates
+}
+
+
 
 ## Weather ----
 #' Convert the units in a met file to standard units
@@ -491,6 +890,7 @@
 .pa_areal_weighted_average <- function(x, y, var, fn, sum = FALSE, cores = 1L){
   s.wrns <-  get("suppress.warnings", envir = pacu.options)
   s.msgs <-  get("suppress.messages", envir = pacu.options)
+  min.cov <- get("minimum.coverage.fraction", envir = pacu.options)
   pol.intersections <- fn(y, x)
   int.ps <- (1:length(y))[lengths(pol.intersections) >= 1]
   y <- sf::st_geometry(y)
@@ -509,7 +909,7 @@
       ncores <- cores.avlb
     }
     cl <- parallel::makeCluster(ncores)
-    parallel::clusterExport(cl, c('y', 'pol.list', 'var', 'sum'), environment())
+    parallel::clusterExport(cl, c('y', 'pol.list', 'var', 'sum', 'min.cov'), environment())
     parallel::clusterEvalQ(cl, {library('sf')})
     avs <- parallel::parLapply(cl,
                                1:length(pol.list),
@@ -518,7 +918,7 @@
                                  ol.pols <- suppressWarnings(sf::st_intersection(ol.pols, sf::st_buffer(y[i, ], 0)))
                                  ol.pols$area <- as.numeric(sf::st_area(ol.pols))
                                  cov.frac <- sum(ol.pols$area)/ as.numeric(sf::st_area(sf::st_buffer(y[i, ], 0)))
-                                 if (cov.frac < 0.25) { return(NULL)}
+                                 if (cov.frac < min.cov) { return(NULL)}
                                  if(sum) {
                                    wv <- as.numeric(sf::st_area(ol.pols)) * ol.pols[[var]]
                                    wv <- sum(wv)
@@ -539,7 +939,7 @@
                     ol.pols <- suppressWarnings(sf::st_intersection(ol.pols, sf::st_buffer(y[i, ], 0)))
                     ol.pols$area <- as.numeric(sf::st_area(ol.pols))
                     cov.frac <- sum(ol.pols$area)/ as.numeric(sf::st_area(sf::st_buffer(y[i, ], 0)))
-                    if (cov.frac < 0.25) { return(NULL)}
+                    if (cov.frac < min.cov) { return(NULL)}
 
                     if(sum) {
                       wv <- as.numeric(sf::st_area(ol.pols)) * ol.pols[[var]]
@@ -572,8 +972,8 @@
   
   s.wrns <-  get("suppress.warnings", envir = pacu.options)
   s.msgs <-  get("suppress.messages", envir = pacu.options)
-  
-  pol.intersections <- sf::st_intersects(polygons, remove_self = FALSE)
+  buffered.polygons <- sf::st_buffer(polygons, -0.01) ## adding some tolerance
+  pol.intersections <- sf::st_intersects(buffered.polygons, remove_self = FALSE)
   number.of.conflicts <- sum(as.numeric(lengths(pol.intersections)  > 1))
 
   if(verbose){cat('Solving polygon boundaries of', number.of.conflicts, 'overlapping polygons in', cores, 'core(s)','\n')}
@@ -675,11 +1075,12 @@
 #' @param df an sf object containg the variables specified in the formular
 #' @param robust whether to use Cressie's robust estimator
 #' @param test.variogram logical, whether to test if the variogram results in valid predictions
+#' @param ... additional parameters passed to the kriging function
 #' @details This function will fit and return a Mattern variogram given a formula and a sf object
 #' @return returns an sf object
 #' @noRd
 
-.pa_fit_variogram <- function(formula, df, robust = TRUE, fun, test.variogram = TRUE, verbose = FALSE) {
+.pa_fit_variogram <- function(formula, df, robust = TRUE, fun, test.variogram = TRUE, verbose = FALSE, ...) {
   if(verbose) cat('Fitting variogram \n')
   
   if(fun == 'log') {
@@ -717,7 +1118,7 @@
   f1 <-  variogram.list[[1]]
   
   if (test.variogram){
-    test.df.size <- nrow(df) %/% 10
+    test.df.size <- nrow(df) %/% 20
     test.df <- df[test.df.size, ]
     for (i in 1:length(variogram.list)){
       f1 <- variogram.list[[i]]
@@ -725,7 +1126,8 @@
                                 df,
                                 test.df,
                                 f1,
-                                debug.level = 0)
+                                debug.level = 0,
+                                ...)
       if (!all(is.na(test.pred$var1.pred))){
         break
       }
@@ -759,9 +1161,9 @@
 
   ## for now, we are limiting the number of cores to 1, as kriging paralellization has
   ## shown to be fatal in windows...
-  #if (cores > 1){
-  #  cores <- 1
-  #}
+  if (cores > 1){
+    cores <- 1
+  }
 
 
   if (is.null(new.df)) {
@@ -784,7 +1186,8 @@
                                robust = TRUE,
                                fun = fun,
                                test.variogram = TRUE, 
-                               verbose = verbose)
+                               verbose = verbose,
+                               ...)
     vari <- model[[2]]
     model <- model[[1]]
 
@@ -1481,6 +1884,31 @@
   mass <- .pa_moisture(mass, moisture, 0)
   mass
 }
+
+
+
+#'
+#' @title Calculate the length and width of rectangular experimental units
+#' @description Calculate the length and width of rectangular experimental units
+#' @name .pa_eu_dimentions
+#' @param x an experimental unit geometry
+#' @details This function will calculate the plot length and with of a rectangular geometry
+#' @return returns a vector containing width and length in meters
+#' @author Caio dos Santos and Fernando Miguez
+#' @noRd
+#'
+.pa_eu_dimensions <- function(x){
+  
+  area <- sf::st_area(x)
+  perimeter <- sf::st_perimeter(x)
+  
+  l = (perimeter + sqrt((perimeter ^ 2) - (16 * area))) / 4
+  w = (perimeter - (2*l))/2
+  res <- c(w,l)
+  names(res) <- c('width', 'length')
+  return(res)
+}
+
 #'
 #' @title Retrieve the kriging weights from the kriging process
 #' @description Retrieve the kriging weights from the kriging process

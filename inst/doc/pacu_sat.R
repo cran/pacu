@@ -45,6 +45,7 @@ s2.files <- list.files(out.dir, '\\.zip', full.names = TRUE)
 rgb.img <- pa_get_rgb(s2.files,
                       aoi = area.of.interest,
                       verbose = FALSE)
+
 pa_plot(rgb.img)
 
 ## ----ndvi-img,  fig.width=7, fig.height=5-------------------------------------

@@ -3,6 +3,7 @@
 \name{pa_plot}
 \alias{pa_plot}
 \alias{pa_plot.yield}
+\alias{pa_plot.trial}
 \alias{pa_plot.veg.index}
 \alias{pa_plot.rgb}
 \alias{pa_plot.met}
@@ -13,7 +14,7 @@ pa_plot(x, ...)
 \method{pa_plot}{yield}(
   x,
   ...,
-  plot.type = c("yieldmap", "variogram"),
+  plot.type = c("yieldmap", "variogram", "steps"),
   palette = "Temps",
   main = "",
   plot.var = NULL,
@@ -24,6 +25,26 @@ pa_plot(x, ...)
   nbreaks = 5,
   breaks = NULL,
   frame = TRUE,
+  extent = sf::st_bbox(x[["yield"]]),
+  legend.outside = FALSE,
+  ask = TRUE
+)
+
+\method{pa_plot}{trial}(
+  x,
+  ...,
+  plot.type = c("trial"),
+  palette = "Temps",
+  main = "",
+  plot.var = NULL,
+  interactive = FALSE,
+  border.col = "black",
+  style = c("quantile", "pretty", "equal"),
+  scale = 1,
+  nbreaks = 5,
+  breaks = NULL,
+  frame = TRUE,
+  extent = sf::st_bbox(x[["trial"]]),
   legend.outside = FALSE
 )
 
@@ -49,6 +70,7 @@ pa_plot(x, ...)
 \method{pa_plot}{rgb}(
   x,
   ...,
+  main = "",
   interactive = FALSE,
   saturation = 1,
   alpha = 1,
@@ -73,7 +95,7 @@ pa_plot(x, ...)
 \item{...}{additional arguments. None used currently.}
 
 \item{plot.type}{type of plot to be produced Defaults to
-yieldmap.}
+trial.}
 
 \item{palette}{a string representing a color palette from
 \link[grDevices]{hcl.pals}. Defaults to \sQuote{Temps}.}
@@ -103,7 +125,12 @@ will produce zoomed in plots.}
 \item{frame}{logical. Whether to draw the frame around
 the plotting area.}
 
+\item{extent}{a bbox object indicating the geographical area to be plotted}
+
 \item{legend.outside}{logical. Whether to place the legend outside of the graph.}
+
+\item{ask}{whether to ask for user before starting a new page of output. If FALSE, plots are 
+arranged using \link[patchwork]{wrap_plots}}
 
 \item{by}{a string or vector of strings used to group the data 
 when plotting. Defaults to 'year'}
@@ -146,8 +173,7 @@ set.}
 No return value, called for side effects
 }
 \description{
-Create interactive or static plots such as yieldmaps, variograms,
-and rgb images from pacu objects.
+Create a plot from a pacu object
 }
 \examples{
 \dontrun{
