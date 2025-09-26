@@ -138,3 +138,42 @@ print.check.yield <- function(x, ...){
     
   }
 }
+
+
+#' @rdname pa_print
+#' @export
+print.trial <- function(x, ...){
+
+
+
+  first <- data.frame('Variable' = attr(x$trial, 'resp'), 
+             'Algorithm' = attr(x$trial, 'algorithm'),
+             'Smoothing' = attr(x$trial, 'smooth.method'),
+             'Units' = attr(x$trial, 'units'))
+  
+  cat('Variables in trial object:\n')
+  .pa_print_table(first, headers = TRUE)
+  xd <- as.data.frame(x$trial)
+  xd <- xd[attr(x$trial, 'resp')]
+  summaries <- vector('list', length(attr(x$trial, 'resp')))
+  
+  cat('\nVariable summary:\n')
+  for ( i in 1:length(summaries)){
+    summ <- stats::fivenum(xd[[i]])
+    nas <- sum(is.na(xd[[i]]))
+    xbar <- mean(xd[[i]], na.rm = TRUE)
+    summ <- c(summ, xbar, nas)
+    summ <- data.frame(value = summ)
+    summ$value <- round(summ$value, getOption('digits')) 
+    summaries[[i]] <- summ
+  }
+  
+  summ <- do.call(cbind, summaries)
+  ids <- data.frame(statistic = c('Min.', '1st Qt.', 'Median', '3rd Qt.', 'Max.', 'Mean', 'NAs'))
+  summ <- cbind(ids, summ)
+  names(summ) <- c(' ', attr(x$trial, 'resp'))
+  
+  .pa_print_table(summ, headers = TRUE)
+
+
+}

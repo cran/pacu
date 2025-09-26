@@ -113,7 +113,7 @@
 #'   diluting the treatment effects. When this argument is
 #'   TRUE, the argument \sQuote{grid} must be supplied.
 #' @param cores the number of cores used in the operation
-#' @param steps EXPERIMENTAL - whether to return the intermediate steps 
+#' @param steps whether to return the intermediate steps 
 #' of the yield processing algorithm
 #' @param verbose whether to print function progress.
 #'   \sQuote{FALSE or 0} will suppress details. \sQuote{TRUE
@@ -529,8 +529,10 @@ pa_yield <- function(input,
   
   if (!is.null(grid)){
     app.pols <- suppressWarnings(sf::st_join(app.pols, grid, join = sf::st_intersects, left = TRUE, largest = TRUE))
+    min.cov <- 0
   }else{
     grid <- sf::st_as_sf(st_geometry(app.pols))
+    min.cov <- NULL
   }
   
   
@@ -561,10 +563,6 @@ pa_yield <- function(input,
     preds <- preds[c(var.label,  paste0(var.label,'.var'), 'geometry')]
     sf::st_geometry(preds) <- 'geometry'
     
-    if (!is.null(grid)){
-      if(length(exp.vars) > 0)
-        preds <- cbind(preds, as.data.frame(grid)[exp.vars])
-    }
     
     preds[[1]] <- .pa_unit_system(preds[[1]], unit.system, lbs.per.bushel)
     preds[[2]] <- .pa_unit_system(preds[[2]], unit.system, lbs.per.bushel, 2)
@@ -609,7 +607,9 @@ pa_yield <- function(input,
                                           grid, 
                                           'mass',
                                           sf::st_intersects,
-                                          cores = cores)
+                                          cores = cores,
+                                          min.cov = min.cov
+                                          )
       preds <- rev(preds)
     }
 
@@ -626,6 +626,10 @@ pa_yield <- function(input,
   if(pb)
     utils::setTxtProgressBar(progress.bar, utils::getTxtProgressBar(progress.bar) + 1)
   
+    if (!is.null(grid)){
+      if(length(exp.vars) > 0)
+      preds <- sf::st_join(preds, grid[exp.vars], left = TRUE, join = sf::st_equals)
+    }
   attr(preds, 'moisture') <- moisture.adj
   attr(preds, 'units') <- paste(unlist(units(preds[[var.label]])[1:2]), collapse = '/')
   attr(preds, 'algorithm') <- algorithm

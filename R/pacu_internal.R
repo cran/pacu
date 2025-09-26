@@ -321,11 +321,11 @@
 }
 
 #'
-#' @title Select files in the S2A and S2B products to crop the file
-#' @description  Select files in the S2A and S2B products to crop the file
+#' @title Select files in the S2A, S2B, and S2C products to crop the file
+#' @description  Select files in the S2A, S2B, and S2C products to crop the file
 #' @name .pa_select_s2_files
 #' @rdname .pa_select_s2_files
-#' @param fpath a file path from which the S2A/S2B files will be select
+#' @param fpath a file path from which the S2A, S2B, and S2C files will be select
 #' @return a vector with relevant file names
 #' @noRd
 
@@ -339,8 +339,8 @@
   imgList <- utils::unzip(fpath, list = TRUE)
   bname <- basename(fpath)
   
-  if (!grepl('^S2A|^S2B', x = bname))
-    stop('Only S2A and S2B functions are supported for now.')
+  if (!grepl('^S2A|^S2B|^S2C', x = bname))
+    stop('Only S2A, S2B, and S2C files are supported for now.')
   
   metadata <- .pa_read_s2_metadata(fpath, to.raw.file = TRUE)
   graticule <- basename(unlist(metadata$General_Info$Product_Info$Product_Organisation))
@@ -808,7 +808,6 @@
 }
 
 
-
 ## Weather ----
 #' Convert the units in a met file to standard units
 #' @name .pa_convert_met_to_standard
@@ -887,10 +886,13 @@
 #' @param cores number of cores to be used in the operation
 #' @noRd
 
-.pa_areal_weighted_average <- function(x, y, var, fn, sum = FALSE, cores = 1L){
+.pa_areal_weighted_average <- function(x, y, var, fn, sum = FALSE, cores = 1L,
+                                       min.cov = NULL){
   s.wrns <-  get("suppress.warnings", envir = pacu.options)
   s.msgs <-  get("suppress.messages", envir = pacu.options)
-  min.cov <- get("minimum.coverage.fraction", envir = pacu.options)
+  if (is.null(min.cov))
+    min.cov <- get("minimum.coverage.fraction", envir = pacu.options)
+  
   pol.intersections <- fn(y, x)
   int.ps <- (1:length(y))[lengths(pol.intersections) >= 1]
   y <- sf::st_geometry(y)
